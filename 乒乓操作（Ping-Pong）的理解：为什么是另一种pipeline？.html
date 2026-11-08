@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>乒乓操作（Ping-Pong）的理解：为什么是另一种pipeline？</title>
+<style>body{max-width:820px;margin:40px auto;padding:0 16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.7;color:#1e293b}img{max-width:100%;height:auto}pre{overflow-x:auto;background:#f1f5f9;padding:12px;border-radius:8px}code{font-family:"SF Mono",ui-monospace,monospace}a{color:#4f46e5}</style>
+</head>
+<body>
+<h1>乒乓操作（Ping-Pong）的理解：为什么是另一种pipeline？</h1>
+<div>
+<div id="article_content" class="article_content clearfix">
+      
+      
+      
+        
+
+<div id="content_views" class="htmledit_views atom-one-dark">
+          
+
+<h3><a name="t0"></a>1.乒乓操作的原理</h3>
+
+<p>&nbsp; &nbsp; &nbsp; &nbsp; 乒乓操作用于数据流控制的处理技巧。</p>
+
+<p>&nbsp; &nbsp; &nbsp; &nbsp; 在两个功能块（function block）对接时，由于瞬时数据率的差异（如block A的写数据频率为200Mhz，而block B的读数据频率为50Mhz），或数据顺序的差异（如block A发送的数据为顺序发送，block B接收数据的顺序为逆序接收，即从最后一个字节开始接收）等原因，导致这两个模块不能同时工作。为了提高电路的<a href="https://so.csdn.net/so/search?q=数据处理" target="_blank" rel="noopener noreferrer">数据处理</a>效能，可以用ping-pong buffer结构连接这两个模块，让它们能够同时工作，本质上也是用面积换速度的思想。</p>
+
+<p></p>
+
+<h3><a name="t1"></a>2.处理流程</h3>
+
+<p>&nbsp; &nbsp; &nbsp; &nbsp; 如下图，假设block A和block B以相同的时钟频率分别对SPRAM进行数据的读写操作。若只有一个SPRAM，由于其特性在任意时刻只能进行读或写，不能同时进行，<strong>所以block A和block B在任意时刻总有一方是空闲状态</strong>。在这种情况下，也可以通过将SPRAM换成双口<a href="https://so.csdn.net/so/search?q=RAM" target="_blank" rel="noopener noreferrer">RAM</a>同时实现读写操作，但是如果block B的功能要求其必须从block A的最后一个数据开始接收，那么即使换成双口RAM后显然也需要等待。</p>
+
+<p>&nbsp; &nbsp; &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; &nbsp;<img alt="" height="162" src="https://i-blog.csdnimg.cn/blog_migrate/9b4a8ad12ee2b0a2939ddca6b85c2d49.png" width="302"> &nbsp;</p>
+
+<p>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp;<strong>而在加入两个buffer后，模块A、B轮流对两个buffer进行读、写，这样这两个模块就能同时工作了。</strong>如下，block A先往其中的一个SPRAM中写入数据，写完后block B从中将数据读出，同时block A又开始向另一个SPRAM中写入数据。这样，只有在第一段block A写数据的时间内，block B是空闲状态，其它时间内，两个模块都是同时工作的。</p>
+
+<p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;​​​​​​​&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img alt="" height="188" src="https://i-blog.csdnimg.cn/blog_migrate/04e20b6f9c6fd97c14f280ff0de7d91f.png" width="333"></p>
+
+<p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;乒乓操作可以看成是另一种形式的流水线技术，不同的是，在两个block之间使用的是两个或者多个的buffer进行切割，是function block级的<a href="https://so.csdn.net/so/search?q=pipeline" target="_blank" rel="noopener noreferrer">pipeline</a>。而传统的pipeline是使用寄存器对组合逻辑进行切割，是cycle级的操作。</p>
+
+<p></p>
+
+<h3><a name="t2"></a>3.ping-pong速率控制</h3>
+
+<p>&nbsp; &nbsp; &nbsp; &nbsp; 通常情况下，A与B的读写速率是不同的。如A的写速率为50MHz，而B的读速率为200MHz。如果还用上述的方法，单纯地插入两个buffer，会导致block A还没将第二个SPRAM写完，block B就要开始读第二个SPRAM中的数据了。</p>
+
+<p>&nbsp; &nbsp; &nbsp; &nbsp; 这种情况下，可以用wptr/rptr指针来控制A/B的操作速率，<a href="https://so.csdn.net/so/search?q=类" target="_blank" rel="noopener noreferrer">类</a>似于FIFO的空满判断指针。</p>
+
+<p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;​​​​​​​&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;​​​​​​​&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img alt="" height="220" src="https://i-blog.csdnimg.cn/blog_migrate/f2762a462a9a36a116445df7dcd45bac.png" width="332"></p>
+
+<p>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp;B通过wptr与rptr的比较，得知某个SPRAM中的数据已经准备好，然后才将其读出。而A得到某个SPRAM的数据为空时，就往里面写数据，这样就解决了速率不匹配的问题。</p>
+
+<p></p>
+
+<h3><a name="t3"></a>4.Ping-Pong级联</h3>
+
+<p>&nbsp; &nbsp; &nbsp; &nbsp; 刚才讨论的仅仅是两个block之间的连接。<strong>当有多个function block进行连接时，可以在每两级之间插入一个ping-pong buffer结构，将它们一级一级连接起来</strong>，如下图所示。</p>
+
+<p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;​​​​​​​&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img alt="" height="174" src="https://i-blog.csdnimg.cn/blog_migrate/0aa0cc411b1a6333f91e4a31632b4ca1.png" width="539"></p>
+
+<h3><a name="t4"></a>&nbsp;5.多个buffer的ping-pong</h3>
+
+<p>&nbsp; &nbsp; &nbsp; &nbsp; 当block A和block B之间的速率差较高时，可以使用多个buffer构成的ping-pong结构，如下图所示。</p>
+
+<p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img alt="" height="301" src="https://i-blog.csdnimg.cn/blog_migrate/8e2a5f715beeed38682d8baafa207495.png" width="310">&nbsp;&nbsp;&nbsp;&nbsp;</p>
+
+<p>&nbsp;</p>
+
+<p>&nbsp;</p>
+
+<p>&nbsp;</p>
+
+        </div>
+
+    </div>
+</div>
+</body>
+</html>
